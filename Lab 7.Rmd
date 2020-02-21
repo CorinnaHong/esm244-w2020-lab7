@@ -1,0 +1,170 @@
+---
+title: "Lab 7"
+author: "Corinna Hong"
+date: "February 20, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+```{r}
+
+# Load packages
+
+# General
+library(tidyverse)
+library(janitor)
+library(plotly)
+library(here)
+
+# Spatial
+library(tmap)
+library(sf)
+library(spatstat)
+library(maptools)
+library(sp)
+
+# Cluster
+library(NbClust)
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(ggdendro)
+
+```
+
+
+## Red Tree Voles in Humbolt County
+
+```{r}
+
+voles <- read_sf(dsn = here("data","redtreevoledata"),
+                 layer = "ds033") %>% 
+  dplyr::select(COUNTY) %>% 
+  dplyr::filter(COUNTY == "HUM") %>% 
+  st_transform(crs = 4326) # have to use transform because it already has a projection
+
+# st_crs(voles) check coordinate reference system
+
+plot(voles)
+
+
+
+# Read in data for county shapes
+humboldt <- read_sf(dsn = here("data","redtreevoledata"),
+                   layer = "california_county_shape_file", crs = 4326) %>%  # set crs as you read it in
+  filter(NAME == "Humboldt") %>% 
+  dplyr::select(NAME)
+
+plot(humboldt)
+
+
+tm_shape(humboldt) +
+  tm_borders() +
+  tm_fill() +
+  tm_shape(voles) +
+  tm_dots(size = 0.5)
+  
+```
+
+
+Convert vole events and Humbolt polygon to point pattern + window
+
+```{r}
+
+# class(voles) shapefile (sf) stored as a dataframe
+voles_sp <- as(voles, "Spatial") # make it spatial data
+voles_ppp <- as(voles_sp, "ppp") # make it a point pattern
+
+```
+
+
+## Cluster Analysis
+
+### k-means
+
+```{r}
+
+iris_clean <- iris %>% 
+  clean_names()
+
+ggplot(data = iris_clean) +
+  geom_point(aes(x = petal_length,
+                 y = petal_width,
+                 color = species))
+
+
+# Ask R how many cluters it thinks this dataset has
+number_est <- NbClust(iris_clean[1:4], 
+                      min.nc = 2, 
+                      max.nc = 10, 
+                      method = "kmeans") # only columns 1-4, min/max # of clusters, use kmeans
+
+
+# Do kmeans
+iris_km <- kmeans(iris_clean [1:4] , 3) # column 1-4 with 3 clusters
+
+
+# Bind cluster # with orignial data
+iris_cl <- data.frame(iris_clean, cluster_no = as.factor(iris_km$cluster)) # add iris_km$cluster to df as a factor unamed cluster_no
+
+
+# Plot
+ggplot(iris_cl) +
+  geom_point(aes(x = sepal_length, 
+                 y = sepal_width, 
+                 color = cluster_no))
+
+```
+
+
+```{r}
+
+plot_ly(x = iris_cl$petal_length,
+        y = iris_cl$petal_width,
+        z = iris_cl$sepal_width,
+        type = "scatter3d",
+        color = iris_cl$cluster_no)
+
+```
+
+## Hierarchical Cluster Analysis
+
+```{r}
+
+wb_env <- read_csv(here("data", "wb_env.csv"))
+
+wb_ghg_20 <- wb_env %>% 
+  arrange(-ghg) %>% # arragne from largest to smallest
+  head(20) # take top 20
+
+
+# Scale data
+wb_scaled <- as.data.frame(scale(wb_ghg_20[3:7])) # scale columns 3-7 (the ones that are scaleable) and make it into a df
+
+
+rownames(wb_scaled) <- wb_ghg_20$name # take name column from wb_ghg_20 and make it into rownames for wb_scaled
+
+
+# Compute dissimilarity values (euclidena distances)
+diss <- dist(wb_scaled, method = "euclidean")
+
+```
+
+
+Use euclidena distances to do complete agglomerate clustering
+
+```{r}
+
+hc_complete <- hclust(diss, method = "complete")
+
+
+# Plot
+plot(hc_complete)
+
+```
+
